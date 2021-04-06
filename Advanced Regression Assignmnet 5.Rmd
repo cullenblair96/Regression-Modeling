@@ -1,0 +1,116 @@
+---
+title: "Advanced Regression Assignment 5"
+author: "Cullen Blair"
+date: "11/11/2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+sum.o = function(fit)
+  round(cbind(summary(fit)$coef,confint(fit)),digits=5)
+us.wages=read.csv("~/Desktop/data/uswages.csv")
+dat0 = us.wages
+y      =      log(dat0$wage) #      use      dat!      #
+dat = data.frame(y,subset(dat0,select=-c(wage,ne,mw,so)))
+n = nrow(dat)
+x = dat$exper
+o.x = order(x)
+```
+
+```{r}
+fit1.lm=lm(y~poly(x,1))
+sum.o(fit1.lm)
+#fit2.lm = lm(y~poly(x,2))                  
+#sum.o(fit2.lm)
+#fit3.lm = lm(y~poly(x,3))                  
+#sum.o(fit3.lm)
+#fit4.lm = lm(y~poly(x,4))                 
+#sum.o(fit4.lm)
+#fit5.lm = lm(y~poly(x,5))                  
+#sum.o(fit5.lm) 
+#fit6.lm = lm(y~poly(x,6))                 
+#sum.o(fit6.lm)  
+fit5.lm = lm(y~poly(x,5))                   
+sum.o(fit5.lm)
+```
+
+```{r}
+f.span = function(sp,ll=0.1,uu=0.99) do.call(c,sapply(sp,function(sp)  
+  as.list(ifelse(((sp>=ll)*(sp<=uu)),loess(y~x,span=sp)[5],1000))))
+
+curve(f.span,0.2,0.8,lwd=2)
+#min=optim(par=0.3,lower = .3,f.span)$par
+#min
+#points(min,f.span(min),pch=19,col="blue")
+fit.lo =loess(y~x,span=0.3)
+summary(fit.lo)
+```
+
+```{r}
+plot(x,y,pch=NA)                                   #      nts      p      1      #
+lines(fitted(fit5.lm)[o.x]~x[o.x],lty=2,col="red",lwd=3.5)
+lines(fit.lo$x[o.x],fit.lo$fitted[o.x],col='blue',lty=1,lwd=3.5)
+p.lo<-predict(fit.lo, se=T)
+lines(x[o.x],p.lo$fit[o.x] - qt(0.975,p.lo$df)*p.lo$se,col='green',lwd=1,lty=1)
+lines(x[o.x],p.lo$fit[o.x] + qt(0.975,p.lo$df)*p.lo$se,col='green',lwd=1,lty=1)
+legend("topright",legend=c("LM-5","lo","CI"),lwd=3,
+       lty=c(2,1,1),col=c("red","blue","green"),cex=0.5)
+```
+
+```{r}
+library(mgcv)
+mgam.fit=mgcv::gam(y~s(educ)+s(exper)+race+smsa+we+pt,data=dat)
+summary(mgam.fit)
+```
+
+
+```{r}
+par(mfrow=c(1,2))
+plot(mgam.fit,residuals=T,select=1,lwd=3)
+plot(mgam.fit,residuals=T,select=2,lwd=3)
+```
+
+```{r}
+yh      =      predict(mgam.fit)   
+rh = residuals(mgam.fit,type="scaled.pearson")
+plot(yh,rh,pch=16); abline(h=0)           
+qq = qqnorm(rh,main="",pch=16); abline(a=0,b=1) 
+```
+
+```{r}
+ym.pred=matrix(NA,n,2)                    
+k.cv = 5;                                 
+f=ceiling(n/k.cv)                         
+set.seed(0)                                
+ss = sample(rep(1:k.cv,f),n)                    # sample obs #
+for(i in 1:k.cv) {                              # loop #    
+  dat.i = dat[ss==i,]; dat.xi = dat[ss!=i,];                             
+  mgam.fit=mgcv::gam(y~s(educ)+s(exper)+race+smsa+we+pt,data=dat)
+  fit.cv.lm=lm(y~poly(educ,6)+poly(exper,9)+race+smsa+we+pt,data=dat)
+  #fit.cv.lm=lm(y~poly(educ,1)+poly(exper,3)+race+smsa+we+pt,data=dat) based on 2b plots, larger rmse than LM used
+  ym.pred[ss==i,1] = predict(mgam.fit,dat.i) 
+  ym.pred[ss==i,2] = predict(fit.cv.lm,dat.i) 
+}
+  rmse.f = function(y,yh) sqrt(t(y-yh)%*%(y-yh)/length(y))
+rmse.cv = apply(ym.pred,2,function(x) rmse.f(y,x))
+c(mgam.rmse=rmse.cv[1],LM.rmse=rmse.cv[2])
+```
+
+```{r}
+AIC.mgam=AIC(mgam.fit)
+AIC.lm=AIC(fit.cv.lm)
+BIC.mgam=AIC(mgam.fit,k=log(n))
+BIC.lm=AIC(fit.cv.lm, k=log(n))
+mgam.r2=rsq::rsq(mgam.fit)
+fit.cv.lm.r2=rsq::rsq(fit.cv.lm)
+like.mgam=logLik(mgam.fit)
+like.lm=logLik(fit.cv.lm)
+summary.5 = data.frame(c(AIC.mgam,AIC.lm),c(BIC.mgam,BIC.lm),c(mgam.r2,fit.cv.lm.r2),c(like.mgam,like.lm),rmse.cv)
+names(summary.5) = c("AIC","BIC","r-sq","log-like","rmse")
+row.names(summary.5)=c("GAM","LM")
+summary.5
+```

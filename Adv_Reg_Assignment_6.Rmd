@@ -1,0 +1,153 @@
+---
+title: "Advanced Regression Assignment 6"
+author: "Cullen Blair"
+date: "11/22/2020"
+output: word_document
+---
+library(faraway)
+oh.df=ohio
+names(oh.df)
+n=nrow(oh.df)
+calc.out = function(e,s)
+  round(cbind(est=e,se=s,lower=e-qnorm(0.975)*s,upper=e+qnorm(0.975)*s),5)
+sum.o = function(fit)
+  round(cbind(summary(fit)$coefficients,confint.default(fit)),digits=5)
+phi.f = function(c,p) c(p=p,est=c/(n-p),c=c,p.value=1-pchisq(c,n-p))
+oh.df$id=as.factor(oh.df$id)
+y=oh.df$resp
+#1a
+table(oh.df$age,oh.df$smoke)
+gs = aggregate(y,by=list(oh.df$age,oh.df$smoke),mean)
+x.tab = xtabs(x~Group.1+Group.2,data=gs)
+names(dimnames(x.tab)) = c("age","smoke")
+x.tab
+#1b
+#fit.glm.bin = glm(y~age+smoke,data=oh.df,family=binomial)
+fit.glm.bin = glm(resp~age+smoke+age*smoke,data=oh.df,family=binomial) #no evidence against null of 0 interaction
+sum.o(fit.glm.bin)  # [ELM, p 287] #
+c(aic=AIC(fit.glm.bin,k=2),bic=AIC(fit.glm.bin,k=log(n)))
+pearson = sum(resid(fit.glm.bin,type="pearson")^2)
+d.test = phi.f(pearson,length(fit.glm.bin$coefficients))
+d.test
+
+#2a
+library(lme4)
+sum.mer = function(mer) round(cbind(summary(mer)$coefficients,
+                                    confint(mer,method="Wald")[-c(1:length(mer@theta)),]),digits=5)
+fit.glmer = glmer(y~age+smoke+age*smoke+(1|id),data=oh.df,family=binomial)
+
+sum.mer(fit.glmer) 
+summary(fit.glmer)$AICtab
+vc = as.numeric(VarCorr(fit.glmer)$id) # vc = 0.5149987
+H = fit.glmer@optinfo$derivs$Hessian # hessian # 
+se = sqrt(diag(2*solve(H))) # std errors #
+calc.out(sqrt(vc),se[1])
+#2b
+library(msm) # deltamethod #
+d.se = deltamethod(~x1^2,sqrt(vc),se[1]^2,ses=T)
+calc.out(vc,d.se) # 2*sqrt(vc)*se[1] #
+#2c
+sum.mer(fit.glmer)
+#3a
+library(geepack)
+gee.fit <- geeglm(y ~age+smoke+I(age*smoke),data=oh.df,family=binomial, id=id, corstr="ar1")
+summary(gee.fit)
+summary(gee.fit)$AICtab
+calc.out(summary(gee.fit)$corr[1],summary(gee.fit)$corr[2])
+#3b
+library(lme4)
+sum.mer = function(mer) round(cbind(summary(mer)$coefficients,
+                                    confint(mer,method="Wald")[-c(1:length(mer@theta)),]),digits=5)
+fit.glmer2 = glmer(resp~smoke+age+smoke*age+(age-1|id)+(1|id),data=oh.df,family=binomial)
+# sfit.glmer = summary(fit.glmer) # [ELM, p 288] #
+sum.mer(fit.glmer2) # nAGQ=25 #
+summary(fit.glmer2)$AICtab
+
+library(lmtest)
+lrtest(fit.glmer,fit.glmer2)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(faraway)
+oh.df=ohio
+names(oh.df)
+n=nrow(oh.df)
+calc.out = function(e,s)
+  round(cbind(est=e,se=s,lower=e-qnorm(0.975)*s,upper=e+qnorm(0.975)*s),5)
+sum.o = function(fit)
+  round(cbind(summary(fit)$coefficients,confint.default(fit)),digits=5)
+phi.f = function(c,p) c(p=p,est=c/(n-p),c=c,p.value=1-pchisq(c,n-p))
+oh.df$id=as.factor(oh.df$id)
+y=oh.df$resp
+```
+
+```{r}
+table(oh.df$age,oh.df$smoke)
+gs = aggregate(y,by=list(oh.df$age,oh.df$smoke),mean)
+x.tab = xtabs(x~Group.1+Group.2,data=gs)
+names(dimnames(x.tab)) = c("age","smoke")
+x.tab
+```
+
+```{r}
+fit.glm.bin = glm(resp~age+smoke+age*smoke,data=oh.df,family=binomial) #no evidence against null of 0 interaction
+sum.o(fit.glm.bin)  # [ELM, p 287] #
+c(aic=AIC(fit.glm.bin,k=2),bic=AIC(fit.glm.bin,k=log(n)))
+pearson = sum(resid(fit.glm.bin,type="pearson")^2)
+d.test = phi.f(pearson,length(fit.glm.bin$coefficients))
+d.test
+```
+
+
+```{r}
+library(lme4)
+sum.mer = function(mer) round(cbind(summary(mer)$coefficients,
+                                    confint(mer,method="Wald")[-c(1:length(mer@theta)),]),digits=5)
+fit.glmer = glmer(y~age+smoke+age*smoke+(1|id),data=oh.df,family=binomial)
+
+sum.mer(fit.glmer) 
+summary(fit.glmer)$AICtab
+vc = as.numeric(VarCorr(fit.glmer)$id) # vc = 0.5149987
+H = fit.glmer@optinfo$derivs$Hessian # hessian # 
+se = sqrt(diag(2*solve(H))) # std errors #
+calc.out(sqrt(vc),se[1])
+```
+
+```{r}
+library(msm) # deltamethod #
+d.se = deltamethod(~x1^2,sqrt(vc),se[1]^2,ses=T)
+calc.out(vc,d.se)
+```
+
+```{r}
+sum.mer(fit.glmer)
+```
+
+```{r}
+library(geepack)
+gee.fit <- geeglm(y ~age+smoke+I(age*smoke),data=oh.df,family=binomial, id=id, corstr="ar1")
+summary(gee.fit)
+summary(gee.fit)$AICtab
+calc.out(summary(gee.fit)$corr[1],summary(gee.fit)$corr[2])
+```
+
+```{r}
+library(lme4)
+sum.mer = function(mer) round(cbind(summary(mer)$coefficients,
+                                    confint(mer,method="Wald")[-c(1:length(mer@theta)),]),digits=5)
+fit.glmer2 = glmer(resp~smoke+age+smoke*age+(1|id)+(age-1|id),data=oh.df,family=binomial)
+sum.mer(fit.glmer2)
+vc2.0 = as.numeric(VarCorr(fit.glmer2)$id)
+vc2.1= as.numeric(VarCorr(fit.glmer2)$id.1)
+H2 = fit.glmer2@optinfo$derivs$Hessian # hessian # 
+se2 = sqrt(diag(2*solve(H2))) # std errors #
+calc.out(sqrt(vc2.0),se2[1])
+calc.out(sqrt(vc2.1),se2[2])
+summary(fit.glmer2)$AICtab
+```
+```{r}
+anova(fit.glmer,fit.glmer2)
+```

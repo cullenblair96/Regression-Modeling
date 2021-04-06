@@ -1,0 +1,105 @@
+---
+title: "Advanced Regression Assignment 4"
+author: "Cullen Blair"
+date: "10/28/2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(VGAM)
+library(faraway)
+library(glmnet)
+sum.vo = function(fit)
+  round(cbind(summary(fit)@coef3,confint(fit)),digits=5)
+```
+
+```{r}
+dat = read.csv("~/Desktop/data/dat_hsb.csv")
+dat$prog =factor(dat$prog,levels=c("vocation","general","academic"),order=FALSE)
+n1=nrow(dat)
+fit.multvf =vglm(prog~.,family=multinomial(refLevel=1),dat)
+fit.multvr =step4vglm(fit.multvf,direction="backward",k=log(n1),trace=0)
+sum.vo(fit.multvr) #summary
+anova(fit.multvr,fit.multvf,type="I")  #test
+```
+
+```{r}
+X =as.matrix(dat[,-1])
+y = dat$prog
+aa = 1; crit = "class"
+set.seed(0)
+fit.glmnet = cv.glmnet(X,y,alpha=aa,type=crit,nfolds=10,  family="multinomial",type.multinomial="grouped")
+lam.best = fit.glmnet$lambda.min 
+lam.best
+coef.glmnet = coef(fit.glmnet,s=lam.best)       # print multinom coef #
+coef.mat = as.matrix(do.call("cbind",coef.glmnet))
+coef.mat
+```
+
+```{r}
+pred.vglm.cv = pred.glmnet.cv = rep(NA,n1)
+k.cv = 10; f = ceiling(n1/k.cv);            #K fold cv   #
+set.seed(0)
+ss = sample(rep(1:k.cv,f),n1);          # sample obs #
+for(i      in      1:k.cv)      {
+  dat.i = dat[ss==i,]; dat.xi = dat[ss!=i,];  
+  fitxi.vglm = vglm(prog~math+socst,family=multinomial(refLevel=1),dat.xi)
+  pred.pi = predict(fitxi.vglm,newdata=dat.i,type="response") 
+  pred.vglm.cv[ss==i] = colnames(pred.pi)[apply(pred.pi,1,which.max)]  
+  
+  fitxi.glmnet = glmnet(as.matrix(dat.xi[,-1]),dat.xi[,1],alpha=1,lamda=lam.best,nfolds=10,  family="multinomial",type.multinomial="grouped")
+  pred.glmnet.cv[ss==i] = predict(fitxi.glmnet,type="class",s=lam.best,  
+                                  newx=as.matrix(dat.i[,-1]))}
+pred.c1=factor(pred.vglm.cv,levels=c("vocation","general","academic"),order=T)
+  pred.c2=factor(pred.glmnet.cv,levels=c("vocation","general","academic"),order=T)
+
+ct.cv = table(dat$prog,pred.c1)
+ct.cv
+sum(diag(ct.cv))/n1
+ct.cv2 = table(dat$prog,pred.c2)
+ct.cv2
+sum(diag(ct.cv2))/n1
+```
+
+```{r}
+library(faraway)
+dat0 = seatpos                                  # [LM, p 180] #
+n2 = nrow(dat0)
+X.dat = scale(dat0[,-9])/sqrt(n2-1)              # [ALRM, p 273] #
+y2 = scale(dat0[,9])/sqrt(n2-1)                    # [LM nts, p 10] #
+dat2 = data.frame(y2,X.dat)  
+lm2=lm(y2~.,data=dat2)
+summary(lm2)
+vif(lm2)
+```
+
+```{r}
+fit.f = lm(y2~.,data=dat2)
+fit.0 = lm(y2~1,data=dat2)
+modf.form = list(upper=formula(terms(fit.f)))
+fit.multr = step(fit.0,scope=modf.form,direction="forward",k=2)
+anova(fit.multr)
+summary(fit.multr)
+```
+
+```{r}
+set.seed(0)
+fit.glmnet2 = cv.glmnet(X.dat,y2,alpha=aa,type="deviance",nfolds=10,  family="gaussian",Standardize=F)
+coef.glmnet2 = coef(fit.glmnet2,s=lam.best)
+coef.glmnet2
+lam.best2 = fit.glmnet$lambda.min 
+lam.best2
+```
+
+```{r}
+aa2 = 0
+library(stats)
+fit.glmnet3 = cv.glmnet(X.dat,y2,alpha=aa2,type="deviance",nfolds=10,  family="gaussian",Standardize=F)
+coef.glmnet3 = coef(fit.glmnet2,s=lam.best)
+lam.best3 = fit.glmnet$lambda.min 
+X3 = model.matrix(lm2)[1:nrow(dat2),]
+ll = function(beta) (1/2*n2)*t(y2-X3%*%beta)%*%(y2-X3%*%beta)+(lam.best3*sum(coef.glmnet3^2)/2)
+oo= optim(rep(0, ncol(X3)),ll,method='L-BFGS',hessian=T) #L-BFGS
+com=c(est=oo$par,objective=oo$value)
+```

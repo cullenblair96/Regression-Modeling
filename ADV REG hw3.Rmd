@@ -1,0 +1,86 @@
+---
+title: "Advanced Regression Homework 3"
+author: "Cullen Blair"
+date: "10/1/2020"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+sum.o = function(fit)                           round(cbind(summary(fit)$coefficients,confint.default(fit)),digits=5)
+ICR.f = function(fit){ c(p=attr(logLik(fit),"df"),ll2=-2*logLik(fit)[1],bic=AIC(fit,k=log(attr(logLik(fit),"n"))))}
+library(faraway)
+dat.o = africa                            # [ELM, p 100] #
+dat.c = dat.o[complete.cases(dat.o),]     # remove NA #
+y = dat.c[,1]
+dat=dat.c[,-1]                              
+n = length(y)
+```
+```{r}
+fit.lm=lm(log(y+0.1)~.,data=dat)
+X=model.matrix(fit.lm)[1:nrow(dat),]
+b0=fit.lm$coefficients
+mu.f=function(x) exp(x)
+f=function(t) sum(log(dpois(y, lambda = mu.f(X%*%t))))
+oo= optim(b0,f,method='Nelder-Mead',hessian=T,control=list(fnscale=-1,reltol=1e-12,maxit=100000,trace=0))
+c(est=oo$par,se=sqrt(diag(-solve(oo$hessian))),objective=oo$value, likelihood=oo$value, options(scipen = 0))
+glm.pois=glm(y~.,family=poisson(link="log"), data=dat)
+summary(oo)
+summary(glm.pois)
+logLik(glm.pois)
+```
+```{r}
+exp.olig=exp(oo$par[2])
+se=sqrt(diag(-solve(oo$hessian)))
+zinf.o = function(est,se,aa=0.05) {
+  z = est/se; pz = 2*(1-pnorm(abs(z)))  
+  lower = est-qnorm(1-aa/2)*se; upper = est+qnorm(1-aa/2)*se;  
+  out = cbind(est,se,z,pz,lower,upper)  
+  colnames(out) = c("Estimate","SE","z","Pr(>|z|)","2.5%","97.5%")  
+  round(out,digits=5) }
+zinf.o(exp.olig, (se[2]))
+```
+
+
+```{r}
+library(MASS)
+negfit=glm(y~.,data=dat, family = negative.binomial(theta = 10)) 
+sum.o(negfit)
+```
+```{r}
+
+phi.f = function(c,df) c(est=c/df,c=c,df=df,p.value=1-pchisq(c,df))
+dev = summary(negfit)$deviance                # deviance ## 
+d.test = phi.f(dev,negfit$df.res)
+d.test
+
+phi.f = function(c,df) c(est=c/df,c=c,df=df,p.value=1-pchisq(c,df))
+dev = summary(glm.pois)$deviance                # deviance ## dev = sum(resid(fit.pois)^2)
+d.test = phi.f(dev,glm.pois$df.res)
+d.test
+
+
+ICR.f(negfit)
+ICR.f(glm.pois)
+```
+
+```{r}
+library(MASS)
+kk = log(n) 
+step(negfit, direction="backward",k=kk)
+```
+```{r}
+library(pscl)
+fit.hurdle.pois = hurdle(y~.|numregim,dist="poisson",data=dat) 
+summary(fit.hurdle.pois)
+lrt.f = function(red,full) {                    # lrt reduced vs full #
+  lrt = -2*(red$loglik-full$loglik)               # [ELM, p 98] #  
+  df.lrt = red$df.res-full$df.res;         
+  p.chisq = 1-pchisq(lrt,df.lrt)
+  c(df=df.lrt,lrt=lrt,pvalue=p.chisq) }                                                #      reduced      model      #
+fit2.hurdle.pois = hurdle(y ~ oligarchy+pollib+parties | numregim,data=dat,dist="poisson")
+summary(fit2.hurdle.pois)
+lrt.f(fit2.hurdle.pois,fit.hurdle.pois)  
+```
